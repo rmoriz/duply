@@ -38,12 +38,12 @@ cd duplicity-0.6.07/
 # install into PREFIX
 PREFIX=~/_apps/duplicity-0.6.07
 python setup.py install --prefix="$PREFIX" --install-lib="$PREFIX"
-# OBSOLETE: since 0.6.17 the next step is not required anymore
+# NOTE: 0.6.17 to 25 do not need the next step, 0.6.25 and newer do again 
 # patch executable to find libs in PREFIX
-cat $PREFIX/bin/duplicity | \
-awk '1;/import getpass, gzip, os, sys, time, types/{print "sys.path.insert(1,sys.path[0] + \47/../\47)"}' > \
-$PREFIX/bin/duplicity_mod && chmod 755 $PREFIX/bin/duplicity_mod && \
-mv $PREFIX/bin/duplicity_mod $PREFIX/bin/duplicity
+awk '1;/import.*[ ,]+sys/{print "sys.path.insert(1,sys.path[0] + \47/../\47)"}' \
+"$PREFIX/bin/duplicity" > "$PREFIX/bin/duplicity_mod" && \
+chmod 755 "$PREFIX/bin/duplicity_mod" && \
+mv "$PREFIX/bin/duplicity_mod" "$PREFIX/bin/duplicity"
 
 If this works flawlessly than you will find the duplicity executable under
 $PREFIX/bin/duplicity
