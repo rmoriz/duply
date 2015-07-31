@@ -411,7 +411,7 @@ function lookup {
 ME_LONG="$0"
 ME="$(basename $0)"
 ME_NAME="${ME%%.*}"
-ME_VERSION="1.9.3dev"
+ME_VERSION="1.10"
 ME_WEBSITE="http://duply.net"
 
 # default config values
