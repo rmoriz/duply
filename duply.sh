@@ -34,8 +34,23 @@
 #
 #
 #  CHANGELOG:
+#  1.10 (31.7.2015)
+#  - featreq 36: busybox issues - fix awk, grep version detection,
+#    fix grep failure because --color=never switch is unsupported
+#    (thx Thomas Harning Jr. for reporting and helping to debug/fix it)
+#  - bugfix 81: --exclude-globbing-filelist is deprecated since 0.7.03
+#    (thx Joachim Wiedorn, also for maintaining the debian package)
+#  - implemented base-/dirname as bash functions
+#  - featreq 31 " Support for duplicity Azure backend " - ignored a 
+#    contributed patch by Scott McKenzie and instead opted for removing almost
+#    all code that deals with special env vars required by backends.
+#    adding and modifying these results in too much overhead so i dropped this
+#    feature. the future alternative for users is to consult the duplicity 
+#    manpage and add the needed export definitions to the conf file.
+#    appended a commented example to the template conf below the auth section.
+#
 #  1.9.2 (21.6.2015)
-#  - bugfix: export keys with gpg2.1 works now (thx Philip Jocks)
+#  - bugfix: exporting keys with gpg2.1 works now (thx Philip Jocks)
 #  - documented GPG_OPTS needed for gpg2.1 to conf template (thx Troy Engel)
 #  - bugfix 82: GREP_OPTIONS=--color=always disrupted time calculation
 #  - added GPG conf var (see conf template for details)
@@ -368,13 +383,35 @@
 #    1.0   - first release
 ###############################################################################
 
+# utility functions overriding binaries
+
+# wrap grep to override possible env set GREP_OPTIONS=--color=always
+function grep {
+  command env -u GREP_OPTIONS grep "$@"
+}
+
+# implement basename in plain bash
+function basename {
+  echo "${1##*/}"
+}
+
+# implement dirname in plain bash
+function dirname {
+  echo ${1%/*}
+}
+
+# a lookup function for executables working with names or file paths
+function lookup {
+  local bin="$1"
+  ( [ "${bin##*/}" == "$bin" ] && hash "$bin" 2>/dev/null ) || [ -x "$bin" ]
+}
 
 # important definitions #######################################################
 
 ME_LONG="$0"
 ME="$(basename $0)"
 ME_NAME="${ME%%.*}"
-ME_VERSION="1.9.2"
+ME_VERSION="1.9.3dev"
 ME_WEBSITE="http://duply.net"
 
 # default config values
@@ -387,6 +424,7 @@ DEFAULT_GPG_KEY='_KEY_ID_'
 DEFAULT_GPG_PW='_GPG_PASSWORD_'
 
 # function definitions ##########################
+
 function set_config { # sets global config vars
   local CONFHOME_COMPAT="$HOME/.ftplicity"
   local CONFHOME="$HOME/.duply"
@@ -431,7 +469,7 @@ function set_config { # sets global config vars
 
 function version_info { # print version information
   cat <<END
-  $ME version $ME_VERSION
+  $ME_NAME version $ME_VERSION
   ($ME_WEBSITE)
 END
 }
@@ -446,15 +484,13 @@ END
 
 function using_info {
   lookup duplicity && duplicity_version_get
-  local NOTFOUND="[not found]"
+  local NOTFOUND="MISSING"
   # freebsd awk (--version only), debian mawk (-W version only), deliver '' so awk does not wait for input
-  local AWK_VERSION=$( lookup awk && (awk --version '' 2>/dev/null || awk -W version '' 2>/dev/null) |\
-                         awk '/.+/{sub(/^[Aa][Ww][Kk][ \t]*/,"",$0);print $0;exit}' \
-                       || echo "[MISSING]" )
+  local AWK_VERSION=$( lookup awk && (awk --version 2>/dev/null || awk -W version 2>&1) | awk 'NR<=2&&tolower($0)~/(busybox|awk)/{success=1;print;exit} END{if(success<1) print "unknown"}' || echo "$NOTFOUND" )
+  local GREP_VERSION=$( lookup grep && grep --version 2>&1 | awk 'NR<=2&&tolower($0)~/(busybox|grep.*[0-9]+\.[0-9]+)/{success=1;print;exit} END{if(success<1) print "unknown"}' || echo "$NOTFOUND" )
   local PYTHON_VERSION=$(lookup python && python -V 2>&1| awk '{print tolower($0);exit}' || echo "python $NOTFOUND" )
   local GPG_INFO=$(gpg_avail && gpg --version 2>&1| awk 'NR==1{v=$1" "$3};/^Home:/{print v" ("$0")"}' || echo "gpg $NOTFOUND")
   local BASH_VERSION=$(bash --version | awk 'NR==1{IGNORECASE=1;sub(/GNU bash, version[ ]+/,"",$0);print $0}')
-  local GREP_VERSION=$(lookup grep && grep --version | awk 'NR==1{IGNORECASE=1;sub(/grep[ ]+/,"",$0);print $0}' || echo "$NOTFOUND")
   echo -e "Using installed duplicity version ${DUPL_VERSION:-$NOTFOUND}\
 ${PYTHON_VERSION+, $PYTHON_VERSION${PYTHONPATH:+ 'PYTHONPATH=$PYTHONPATH'}}\
 ${GPG_INFO:+, $GPG_INFO}${AWK_VERSION:+, awk '${AWK_VERSION}'}${GREP_VERSION:+, grep '${GREP_VERSION}'}\
@@ -501,7 +537,7 @@ PROFILE:
   to '~/.${ME_NAME}/<profile>' (~ expands to environment variable \$HOME).
 
   Superuser root can place profiles under '/etc/${ME_NAME}'. Simply create
-  the folder manually before running $ME as superuser.
+  the folder manually before running $ME_NAME as superuser.
   Note:  
     Already existing profiles in root's home folder will cease to work
     unless they are moved to the new location manually.
@@ -574,7 +610,7 @@ COMMANDS:
   txt2man    feature for package maintainers - create a manpage based on the 
              usage output. download txt2man from http://mvertes.free.fr/, put 
              it in the PATH and run '$ME txt2man' to create a man page.
-  version    show version information of $ME and needed programs
+  version    show version information of $ME_NAME and needed programs
 
 OPTIONS:
   --force    passed to duplicity (see commands: purge, purge-full, cleanup)
@@ -722,6 +758,13 @@ TARGET='${DEFAULT_TARGET}'
 # setting them here _and_ in TARGET results in an error
 #TARGET_USER='${DEFAULT_TARGET_USER}'
 #TARGET_PASS='${DEFAULT_TARGET_PASS}'
+# alternatively you might export the auth env vars for your backend here
+# when in doubt consult (if existing) the NOTE section of your backend on
+#  http://duplicity.nongnu.org/duplicity.1.html for details
+# eg. for cloud files backend it might look like this (uncomment for use!)
+#export CLOUDFILES_USERNAME='someuser'
+#export CLOUDFILES_APIKEY='somekey'
+#export CLOUDFILES_AUTHURL ='someurl'
 
 # base directory to backup
 SOURCE='${DEFAULT_SOURCE}'
@@ -905,8 +948,8 @@ function error_gpg_key {
   error_gpg "${KIND} gpg key '${KEY_ID}' cannot be found." \
 "Doublecheck if the above key is listed by 'gpg --list-keys' or available 
   as gpg key file '$(basename "$(gpg_keyfile "${KEY_ID}")")' in the profile folder.
-  If not you can put it there and $ME will autoimport it on the next run.
-  Alternatively import it manually as the user you plan to run $ME with."
+  If not you can put it there and $ME_NAME will autoimport it on the next run.
+  Alternatively import it manually as the user you plan to run $ME_NAME with."
 }
 
 function error_gpg_test {
@@ -917,10 +960,10 @@ function error_gpg_test {
 Hint${hint:+s}:
   ${hint}This error means that gpg is probably misconfigured or not working 
   correctly. The error message above should help to solve the problem.
-  However, if for some reason $ME should misinterpret the situation you 
+  However, if for some reason $ME_NAME should misinterpret the situation you 
   can define GPG_TEST='disabled' in the conf file to bypass the test.
   Please do not forget to report the bug in order to resolve the problem
-  in future versions of $ME.
+  in future versions of $ME_NAME.
 "
 }
 
@@ -937,7 +980,7 @@ function error_to_string {
 function duplicity_version_get {
 	var_isset DUPL_VERSION && return
 	DUPL_VERSION=`duplicity --version 2>&1 | awk '/^duplicity /{print $2; exit;}'`
-	#DUPL_VERSION='0.6.08b' #,0.4.4.RC4,0.6.08b
+	#DUPL_VERSION='0.7.03' #'0.6.08b' #,0.4.4.RC4,0.6.08b
 	DUPL_VERSION_VALUE=0
 	DUPL_VERSION_AWK=$(awk -v v="$DUPL_VERSION" 'BEGIN{
 	if (match(v,/[^\.0-9]+[0-9]*$/)){
@@ -957,7 +1000,7 @@ function duplicity_version_check {
 	if [ $DUPL_VERSION_VALUE -eq 0 ]; then
 		inform "duplicity version check failed (please report, this is a bug)" 
 	elif [ $DUPL_VERSION_VALUE -le 404 ] && [ ${DUPL_VERSION_RC:-4} -lt 4 ]; then
-		error "The installed version $DUPL_VERSION is incompatible with $ME v$ME_VERSION.
+		error "The installed version $DUPL_VERSION is incompatible with $ME_NAME v$ME_VERSION.
 You should upgrade your version of duplicity to at least v0.4.4RC4 or
 use the older ftplicity version 1.1.1 from $ME_WEBSITE."
 	fi
@@ -1016,17 +1059,6 @@ function run_cmd {
   return $CMD_ERR
 }
 
-# wrap grep to override possible env set GREP_OPTIONS=--color=always
-function grep {
-  command grep --color=never "$@"
-}
-
-# a lookup function for executables working with names or file paths
-function lookup {
-  local bin="$1"
-  ( [ "${bin##*/}" == "$bin" ] && hash "$bin" 2>/dev/null ) || [ -x "$bin" ]
-}
-
 function qw { quotewrap "$@"; }
 
 function quotewrap {
@@ -1077,17 +1109,18 @@ DUPL_VARS_GLOBAL="TMPDIR='$TEMP_DIR' \
  ${DUPL_ARG_ENC}"
 }
 
-# filter the DUPL_PARAMS var from conf
+
+# function to filter the DUPL_PARAMS var from user conf
 function duplicity_params_conf {
-	# reuse cmd var from main loop
-	## in/exclude parameters are currently not supported on restores
-	if [ "$cmd" = "fetch" ] || [ "$cmd" = "restore" ]; then
-		# filter exclude params from fetch/restore
-		echo "$DUPL_PARAMS" | awk '{gsub(/--(ex|in)clude[a-z-]*(([ \t]+|=)[^-][^ \t]+)?/,"");print}'
-		return
-	fi
-	
-	echo "$DUPL_PARAMS"
+  # reuse cmd var from main loop
+  ## in/exclude parameters are currently not supported on restores
+  if [ "$cmd" = "fetch" ] || [ "$cmd" = "restore" ] || [ "$cmd" = "status" ]; then
+    # filter exclude params from fetch/restore
+    echo "$DUPL_PARAMS" | awk '{gsub(/--(ex|in)clude[a-z-]*(([ \t]+|=)[^-][^ \t]+)?/,"");print}'
+    return
+  fi
+  
+  echo "$DUPL_PARAMS"
 }
 
 function duplify { # the actual wrapper function
@@ -1302,7 +1335,7 @@ function gpg_import {
   fi
 
   # failover: user has to set trust manually
-  echo -e "For $ME to work you have to set the trust level 
+  echo -e "For $ME_NAME to work you have to set the trust level 
 with the command \"trust\" to \"ultimate\" (5) now.
 Exit the edit mode of gpg with \"quit\"."
   CMD_MSG="Running gpg to manually edit key '$KEY_ID'"
@@ -1350,7 +1383,7 @@ function gpg_export_if_needed {
     done
   done
   
-  [ -n "$SUCCESS" ] && inform "$ME exported new keys to your profile.
+  [ -n "$SUCCESS" ] && inform "$ME_NAME exported new keys to your profile.
 You should backup your changed profile folder now and store it in a safe place."
 }
 
@@ -1723,32 +1756,6 @@ elif var_isset 'TARGET_PASS' && var_isset 'TARGET_URL_PASS' && \
  Hint: Remove conflicting setting."
 fi
 
-# check if authentication information sufficient
-if ( ( ! var_isset 'TARGET_USER' && ! var_isset 'TARGET_URL_USER' ) && \
-       ( ! var_isset 'TARGET_PASS' && ! var_isset 'TARGET_URL_PASS' ) ); then
-  # ok here some exceptions:
-  #   protocols that do not need passwords
-  #   s3[+http] only needs password for write operations
-  if [ -n "$( tolower "${TARGET_URL_PROT}" | grep -e '^\(dpbx\|file\|tahoe\|ssh\|scp\|sftp\|swift\)://$' )" ]; then
-    : # all is well file/tahoe do not need passwords, ssh might use key auth
-  elif [ -n "$(tolower "${TARGET_URL_PROT}" | grep -e '^s3\(\+http\)\?://$')" ] && \
-     [ -z "$(echo ${cmds} | grep -e '\(bkp\|incr\|full\|purge\|cleanup\)')" ]; then
-    : # still fine, it's possible to read only access configured buckets anonymously
-  else
-    error " Backup target credentials needed but not set in conf file 
- '$CONF'.
- Setting TARGET_USER or TARGET_PASS or the corresponding values in TARGET url 
- are missing. Some protocols only might need it for write access to the backup 
- repository (commands: bkp,backup,full,incr,purge) but not for read only access
- (e.g. verify,list,restore,fetch). 
- 
- Hints:
-   Add the credentials (user,password) to the conf file.
-   To force an empty password set TARGET_PASS='' or TARGET='prot://user:@host..'.
-"
-  fi
-fi
-
 # GPG config plausibility check1 (disabled check) #############################
 if gpg_disabled; then
   : # encryption disabled, all is well
@@ -2010,92 +2017,59 @@ var_isset 'TARGET_PASS' && TARGET_URL_PASS="$TARGET_PASS"
 
 # build target backend data depending on protocol
 case "$(tolower "${TARGET_URL_PROT%%:*}")" in
-  's3'|'s3+http')
-    BACKEND_PARAMS="AWS_ACCESS_KEY_ID='${TARGET_URL_USER}' AWS_SECRET_ACCESS_KEY='${TARGET_URL_PASS}'"
-    BACKEND_URL="${TARGET_URL_PROT}${TARGET_URL_HOSTPATH}"
-    ;;
-  'gs')
-    BACKEND_PARAMS="GS_ACCESS_KEY_ID='${TARGET_URL_USER}' GS_SECRET_ACCESS_KEY='${TARGET_URL_PASS}'"
-    BACKEND_URL="${TARGET_URL_PROT}${TARGET_URL_HOSTPATH}"
-    ;;
   'cf+http')
-    # respect potentially set cloudfile env vars
-    var_isset 'CLOUDFILES_USERNAME' && TARGET_URL_USER="$CLOUDFILES_USERNAME"
-    var_isset 'CLOUDFILES_APIKEY' && TARGET_URL_PASS="$CLOUDFILES_APIKEY"
-    # add them to duplicity params
-    var_isset 'TARGET_URL_USER' && \
-      BACKEND_PARAMS="CLOUDFILES_USERNAME=$(qw "${TARGET_URL_USER}")"
-    var_isset 'TARGET_URL_PASS' && \
-      BACKEND_PARAMS="$BACKEND_PARAMS CLOUDFILES_APIKEY=$(qw "${TARGET_URL_PASS}")"
-    BACKEND_URL="${TARGET_URL_PROT}${TARGET_URL_HOSTPATH}"
     # info on missing AUTH_URL
     if ! var_isset 'CLOUDFILES_AUTHURL'; then
-      echo -e "INFO: No CLOUDFILES_AUTHURL defined (in conf).\n      Will use default from python-cloudfiles (probably rackspace)."
-    else
-      BACKEND_PARAMS="$BACKEND_PARAMS CLOUDFILES_AUTHURL=$(qw "${CLOUDFILES_AUTHURL}")"
+      inform "No CLOUDFILES_AUTHURL exported (in conf).
+Will use default which is probably rackspace."
     fi
     ;;
-   'file'|'tahoe'|'dpbx')
-     BACKEND_URL="${TARGET_URL_PROT}${TARGET_URL_HOSTPATH}"
-     ;;
    'swift')
-     BACKEND_URL="${TARGET_URL_PROT}${TARGET_URL_HOSTPATH}"
-     # respect possibly set swift env vars
-     var_isset 'SWIFT_USERNAME' && TARGET_URL_USER="$SWIFT_USERNAME"
-     var_isset 'SWIFT_PASSWORD' && TARGET_URL_PASS="$SWIFT_PASSWORD"
-     # add them to duplicity params like with cloudfile to make it look standardized
-     var_isset 'TARGET_URL_USER' && \
-       BACKEND_PARAMS="$BACKEND_PARAMS SWIFT_USERNAME=$(qw "${TARGET_URL_USER}")"
-     var_isset 'SWIFT_AUTHURL' && \
-       BACKEND_PARAMS="$BACKEND_PARAMS SWIFT_AUTHURL=$(qw "${SWIFT_AUTHURL}")"
-     ( var_isset 'TARGET_URL_USER' && ! var_isset 'SWIFT_AUTHURL' ) &&\
+    # info on possibly missing AUTH_URL
+       var_isset 'SWIFT_AUTHURL' &&\
        warning "\
-Swift will probably fail because the conf var SWIFT_AUTHURL was not defined!"
-     var_isset 'SWIFT_AUTHVERSION' && \
-       BACKEND_PARAMS="$BACKEND_PARAMS SWIFT_AUTHVERSION=$(qw "${SWIFT_AUTHVERSION}")"
-     var_isset 'TARGET_URL_PASS' && \
-       BACKEND_PARAMS="$BACKEND_PARAMS SWIFT_PASSWORD=$(qw "${TARGET_URL_PASS}")"
-     ;;
+Swift will probably fail because the conf var SWIFT_AUTHURL was not exported!"
+    ;;
   'rsync')
     # everything in url (this backend does not support pass in env var)
     # this is obsolete from version 0.6.10 (buggy), hopefully fixed in 0.6.11
     # print warning older version is detected
-    var_isset 'TARGET_URL_USER' && BACKEND_CREDS="$(url_encode "${TARGET_URL_USER}")"
-    if duplicity_version_lt 610; then
+    duplicity_version_lt 610 &&
       warning "\
 Duplicity version '$DUPL_VERSION' does not support providing the password as 
 env var for rsync backend. For security reasons you should consider to 
 update to a version greater than '0.6.10' of duplicity."
-      var_isset 'TARGET_URL_PASS' && BACKEND_CREDS="${BACKEND_CREDS}:$(url_encode "${TARGET_URL_PASS}")"
-    else
-      var_isset 'TARGET_URL_PASS' && BACKEND_PARAMS="FTP_PASSWORD=$(qw "${TARGET_URL_PASS}")"
-    fi
-    var_isset 'BACKEND_CREDS' && BACKEND_CREDS="${BACKEND_CREDS}@"
-    BACKEND_URL="${TARGET_URL_PROT}${BACKEND_CREDS}${TARGET_URL_HOSTPATH}"
     ;;
   *)
     # for all other protocols we put username in url and pass into env var 
     # for secúrity reasons, we url_encode username to protect special chars
-    var_isset 'TARGET_URL_USER' && 
-      BACKEND_CREDS="$(url_encode "${TARGET_URL_USER}")@"
+
     # sortout backends with special ways to handle password
     case "$(tolower "${TARGET_URL_PROT%%:*}")" in
       'imap'|'imaps')
         var_isset 'TARGET_URL_PASS' && BACKEND_PARAMS="IMAP_PASSWORD=$(qw "${TARGET_URL_PASS}")"
       ;;
-      'ssh'|'sftp'|'scp')
-        # ssh backend wants to be told that theres a pass to use
-        var_isset 'TARGET_URL_PASS' && \
-          DUPL_PARAMS="$DUPL_PARAMS --ssh-askpass" && \
-          BACKEND_PARAMS="FTP_PASSWORD=$(qw "${TARGET_URL_PASS}")"
-      ;;
       *)
+        # add needed param for ssh backend
+        case "$(tolower "${TARGET_URL_PROT%%:*}")" in
+          'ssh'|'sftp'|'scp')
+            # ssh backend wants to be told that there is a pass to use
+            var_isset 'TARGET_URL_PASS' && \
+              DUPL_PARAMS="$DUPL_PARAMS --ssh-askpass" && \
+              BACKEND_PARAMS="FTP_PASSWORD=$(qw "${TARGET_URL_PASS}")"
+            ;;
+        esac
         # rest uses FTP_PASS var
         var_isset 'TARGET_URL_PASS' && \
           BACKEND_PARAMS="FTP_PASSWORD=$(qw "${TARGET_URL_PASS}")"
       ;;
     esac
-    BACKEND_URL="${TARGET_URL_PROT}${BACKEND_CREDS}${TARGET_URL_HOSTPATH}"
+    # insert url encoded username into target url if needed
+    if var_isset 'TARGET_URL_USER'; then
+      BACKEND_URL="${TARGET_URL_PROT}$(url_encode "${TARGET_URL_USER}")@${TARGET_URL_HOSTPATH}"
+    else
+      BACKEND_URL="$TARGET"
+    fi
     ;;
 esac
 
@@ -2104,6 +2078,8 @@ esac
 SOURCE="$SOURCE"
 BACKEND_URL="$BACKEND_URL"
 EXCLUDE="$EXCLUDE"
+# since 0.7.03 --exclude-globbing-filelist is deprecated
+EXCLUDE_PARAM="--exclude$(duplicity_version_lt 703 && echo -globbing)-filelist" 
 
 # replace magic separators to condition command equivalents (+=and,-=or)
 cmds=$(awk -v cmds="$cmds" "BEGIN{ gsub(/\+/,\"_and_\",cmds); gsub(/\-/,\"_or_\",cmds); print cmds}")
@@ -2170,20 +2146,20 @@ case "$(tolower $cmd)" in
     ( run_script "$script" )
     ;;
   'bkp')
-    duplify -- "${dupl_opts[@]}" --exclude-globbing-filelist "$EXCLUDE" \
+    duplify -- "${dupl_opts[@]}" $EXCLUDE_PARAM "$EXCLUDE" \
           "$SOURCE" "$BACKEND_URL"
     ;;
   'incr')
-    duplify incr -- "${dupl_opts[@]}" --exclude-globbing-filelist "$EXCLUDE" \
+    duplify incr -- "${dupl_opts[@]}" $EXCLUDE_PARAM "$EXCLUDE" \
           "$SOURCE" "$BACKEND_URL"
     ;;
   'full')
-    duplify full -- "${dupl_opts[@]}" --exclude-globbing-filelist "$EXCLUDE" \
+    duplify full -- "${dupl_opts[@]}" $EXCLUDE_PARAM "$EXCLUDE" \
           "$SOURCE" "$BACKEND_URL"
     ;;
   'verify')
     TIME="${ftpl_pars[0]:+"-t ${ftpl_pars[0]}"}"
-    duplify verify -- $TIME "${dupl_opts[@]}" --exclude-globbing-filelist "$EXCLUDE" \
+    duplify verify -- $TIME "${dupl_opts[@]}" $EXCLUDE_PARAM "$EXCLUDE" \
           "$BACKEND_URL" "$SOURCE"
     ;;
   'verifypath')
@@ -2194,7 +2170,7 @@ case "$(tolower $cmd)" in
   Hint: 
     Syntax is -> $ME <profile> verifyPath <rel_bkp_path> <local_path> [<age>]"
 
-    duplify verify -- $TIME "${dupl_opts[@]}" --exclude-globbing-filelist "$EXCLUDE" \
+    duplify verify -- $TIME "${dupl_opts[@]}" $EXCLUDE_PARAM "$EXCLUDE" \
           --file-to-restore "$IN_PATH" "$BACKEND_URL" "$OUT_PATH"
     ;;
   'list')
