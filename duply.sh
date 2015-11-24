@@ -34,7 +34,7 @@
 #
 #
 #  CHANGELOG:
-#  1.11 (23.11.2015)
+#  1.11 (24.11.2015)
 #  - remove obsolete --ssh-askpass routine
 #  - add PYTHON conf var to allow global override of used python interpreter
 #  - enforced usage of "python2" in PATH as default interpreter for internal
