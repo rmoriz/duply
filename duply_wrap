@@ -4,8 +4,12 @@ DUPLY=$(dirname "$0")/duply.sh
 #PATH=~/duplicity.webdav/trunk/bin:$PATH
 #PATH=/usr/local/python-2.4.6/bin:~jamoke/_apps/duplicity-0.6.20.u1/bin:$PATH
 #PATH=/usr/local/gpg-1.4.16/bin:$PATH
-PATH=/usr/local/gpg-2.1.5/bin:$PATH
+#PATH=/usr/local/gpg-2.1.5/bin:$PATH
+
+PATH=/usr/local/python-2.6.5/bin/:$PATH
 PATH=/usr/local/python-2.7.6/bin/:$PATH
+#PATH=/usr/local/python-3.2.2/bin/:$PATH
+
 PATH=/usr/local/lftp-4.6.0/bin/:$PATH
 PATH=/usr/local/par2cmdline-0.4/bin/:$PATH
 #/usr/local/python-2.4.6/bin/
@@ -15,8 +19,9 @@ PATH=/usr/local/par2cmdline-0.4/bin/:$PATH
 #~jamoke/dupl-trunk.webdav-0.7
 #PATH=~/dupl07.bzr5/bin:$PATH
 #PATH=~jamoke/_apps/duplicity-0.7.02/bin:$PATH
-PATH=_apps/duplicity-0.6.24/bin/:$PATH
-export PYTHONPATH=~jamoke/paramiko-1.12.0/:~jamoke/ecdsa-0.10/:~jamoke/dropbox-python-sdk-2.0.0/build/lib/:~jamoke/urllib3-1.7.1/build/lib/:~jamoke/pycrypto-2.5/build/lib.linux-i686-2.6/:~jamoke/pexpect-3.3/build/lib/
+PATH=_apps/duplicity-0.7.05/bin/:$PATH
+#PATH=_apps/duplicity-0.6.24/bin/:$PATH
+export PYTHONPATH=~jamoke/paramiko-1.12.0/:~jamoke/ecdsa-0.10/:~jamoke/dropbox-python-sdk-2.0.0/build/lib/:~jamoke/urllib3-1.7.1/build/lib/:~jamoke/pycrypto-2.5/build/lib.linux-i686-2.6/:~jamoke/pexpect-3.3/build/lib/:~jamoke/lockfile-0.11.0/
 export PATH
 # protect params with spaces, use "$@" instead
 #for ((a=1; a <= ${#@}; a++)); do eval ARG="\${${a}}"; ARGS="$ARGS \"$ARG\""; done;
